@@ -44,11 +44,13 @@ class CallbackModule(CallbackBase):
     def __init__(self):
         super(CallbackModule, self).__init__()
 
-        if not os.path.exists("/var/log/ansible"):
-            os.makedirs("/var/log/ansible")
+        ANSIBLE_JSON_LOG_PATH = os.environ.get('ANSIBLE_JSON_LOG_PATH', '/var/log/ansible/audit.log')
+
+        if not os.path.exists(os.path.dirname(ANSIBLE_JSON_LOG_PATH))
+            os.makedirs(os.path.dirname(ANSIBLE_JSON_LOG_PATH))
 
         self.user = self.get_username()
-        self.log_path = "/var/log/ansible/audit.log"
+        self.log_path = ANSIBLE_JSON_LOG_PATH
         self.session = str(uuid.uuid1())
         self.errors = 0
         self.start_time = datetime.utcnow()
