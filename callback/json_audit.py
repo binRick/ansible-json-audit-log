@@ -46,8 +46,8 @@ class CallbackModule(CallbackBase):
 
         ANSIBLE_JSON_LOG_PATH = os.environ.get('ANSIBLE_JSON_LOG_PATH', '/var/log/ansible/audit.log')
 
-        if not os.path.exists(os.path.dirname(ANSIBLE_JSON_LOG_PATH))
-            os.makedirs(os.path.dirname(ANSIBLE_JSON_LOG_PATH))
+#        if not os.path.exists(os.path.dirname(ANSIBLE_JSON_LOG_PATH))
+#            os.makedirs(os.path.dirname(ANSIBLE_JSON_LOG_PATH))
 
         self.user = self.get_username()
         self.log_path = ANSIBLE_JSON_LOG_PATH
@@ -70,8 +70,12 @@ class CallbackModule(CallbackBase):
 
     def v2_playbook_on_play_start(self, play):
         self.play = play
-        self.environment = list(play.get_variable_manager()
-          .get_vars()['hostvars'].values())[0]['environment_name']
+    
+        if 'ANSIBLE_ENVIRONMENT_NAME' in os.environ.keys():
+            self.environment = os.environ['ANSIBLE_ENVIRONMENT_NAME']
+        else:
+            self.environment = list(play.get_variable_manager().get_vars()['hostvars'].values())[0]['environment_name']
+
         if not self.start_logged:
           event = {
               'event_type': "ansible_start",
