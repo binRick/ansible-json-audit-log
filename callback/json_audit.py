@@ -68,6 +68,20 @@ class CallbackModule(CallbackBase):
         with open(self.log_path, "ab") as fd:
             fd.write(msg)
 
+    def v2_playbook_on_task_start(self, task, is_conditional):
+        event = {
+            'event_type': "ansible_task_start",
+            'userid': self.user,
+            'session': self.session,
+            'is_conditional': is_conditional,
+            'ansible_playbook': self.playbook,
+#            'ansible_host': result._host.name,
+#            'ansible_task': result._task.name,
+#            'ansible_playbook_duration': runtime.total_seconds(),
+            #'ansible_playbook_stats': summarize_stat
+        }
+        self.log(event)
+
     def v2_playbook_on_play_start(self, play):
         self.play = play
     
