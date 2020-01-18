@@ -18,7 +18,6 @@ DOCUMENTATION = '''
 '''
 
 import os, time, pathlib
-#, simplejson
 import pwd
 import json
 import uuid
@@ -46,10 +45,6 @@ def getTimestampMilliseconds():
 
 def getTimestamp():
     return int(time.time())
-
-#def timestamp(self):
-#    if self.current is not None and self.current in TASK_START_TIMES.keys():
-#        self.tasks[self.current]['time'] = getTimestampMilliseconds() - TASK_START_TIMES[self.current]
 
 def summarizeRoles(ROLES, TASKS):
     SUMMARY = {'roles': {}}
@@ -164,6 +159,7 @@ class CallbackModule(CallbackBase):
         event['user'] = self.user
         event['playbook'] = self.playbook
 
+
         if 'task_uuid' in event.keys() and 'role' in self.tasks[event['task_uuid']].keys() and self.tasks[event['task_uuid']]['role']:
             event['role'] = self.tasks[event['task_uuid']]['role'] 
 
@@ -215,7 +211,6 @@ class CallbackModule(CallbackBase):
     def v2_runner_on_start(self, host, task):
         self._record_task(task)
     def v2_playbook_on_task_start(self, task, is_conditional):
-    #def v2_runner_on_start(self, host, task):
         self._task_counter += 1
         self._PLAYBOOK_START_TS_MS = getTimestampMilliseconds()
         self._record_task(task)
@@ -224,6 +219,7 @@ class CallbackModule(CallbackBase):
             'is_conditional': is_conditional,
             'task_uuid': task._uuid,
         }
+
         if task._role:
             event['role'] = task._role._role_name
         if task and task.name:
