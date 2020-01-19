@@ -76,6 +76,7 @@ class CallbackModule(CallbackBase):
         self.vm = None
         self.tasks = collections.OrderedDict()
         self.roles = collections.OrderedDict()
+        self.tags = collections.OrderedDict()
         self.current = None
         self._PLAYBOOK_START_TS_MS = None
         self._PLAYBOOK_END_TS_MS = None
