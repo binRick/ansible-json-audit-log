@@ -127,6 +127,7 @@ class CallbackModule(CallbackBase):
         self.current = task._uuid
         self.tasks[self.current] = {}
         self.tasks[self.current]['name'] = task.get_name().strip()
+        self.tasks[self.current]['role'] = None
         if self.current not in TASK_START_TIMES.keys():
             TASK_START_TIMES[self.current] = getTimestampMilliseconds()
         else:
