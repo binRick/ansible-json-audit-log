@@ -125,15 +125,21 @@ class CallbackModule(CallbackBase):
 
     def _record_task(self, task):
         self.current = task._uuid
-        self.tasks[self.current] = {}
-        self.tasks[self.current]['name'] = task.get_name().strip()
-        self.tasks[self.current]['role'] = None
+        if not self.current in self.tasks.keys():
+            self.tasks[self.current] = {}
+            self.tasks[self.current]['name'] = task.get_name().strip()
+            self.tasks[self.current]['role'] = None
+            self.tasks[self.current]['items'] = None
+            self.tasks[self.current]['result'] = None
+
         if self.current not in TASK_START_TIMES.keys():
             TASK_START_TIMES[self.current] = getTimestampMilliseconds()
+            self.tasks[self.current]['start_ts_time'] = time.time()
         else:
             TASK_END_TIMES[self.current] = getTimestampMilliseconds()
             self.tasks[self.current]['start_ts_ms'] = TASK_START_TIMES[self.current]
             self.tasks[self.current]['end_ts_ms'] = TASK_END_TIMES[self.current]
+            self.tasks[self.current]['end_ts_time'] = time.time()
             self.tasks[self.current]['duration_ms'] = TASK_END_TIMES[self.current] - TASK_START_TIMES[self.current]
 
         if task.action:
@@ -340,6 +346,7 @@ class CallbackModule(CallbackBase):
 
 
     def v2_runner_on_ok(self, result, **kwargs):
+        self.tasks[result._task._uuid]['result']  = 'ok'
         COUNTER_MSG = ("%d/%d [%s]" % (self._task_counter, self._task_total, result._task.get_name().strip()))
         event = {
             'event_type': "task_ok",
