@@ -218,6 +218,7 @@ class CallbackModule(CallbackBase):
 
     def v2_runner_on_start(self, host, task):
         self._record_task(task)
+        self.tasks[result._task._uuid]['result']  = 'started'
     def v2_playbook_on_task_start(self, task, is_conditional):
         self._task_counter += 1
         self._PLAYBOOK_START_TS_MS = getTimestampMilliseconds()
@@ -370,6 +371,7 @@ class CallbackModule(CallbackBase):
         self.log(event)
 
     def v2_runner_on_skipped(self, result, **kwargs):
+        self.tasks[result._task._uuid]['result']  = 'skipped'
         if not result._task._uuid in self._SKIPPED_TASKS:
             self._SKIPPED_TASKS.append(result._task._uuid)
         event = {
@@ -416,6 +418,7 @@ class CallbackModule(CallbackBase):
         self.log(event)
 
     def v2_runner_on_unreachable(self, result, **kwargs):
+        self.tasks[result._task._uuid]['result']  = 'unreachable'
         event = {
             'event_type': "task_unreachable",
             'status': "unreachable",
@@ -429,6 +432,7 @@ class CallbackModule(CallbackBase):
         self.log(event)
 
     def v2_runner_on_async_failed(self, result, **kwargs):
+        self.tasks[result._task._uuid]['result']  = 'async_failed'
         event = {
             'event_type': "async",
             'status': "failed",
