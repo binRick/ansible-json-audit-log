@@ -218,8 +218,11 @@ class CallbackModule(CallbackBase):
 
     def v2_runner_on_start(self, host, task):
         self._record_task(task)
-        self.tasks[result._task._uuid]['result']  = 'started'
+        #if not 'result' in self.tasks[result._task._uuid].keys():
+        #self.tasks[result.task._uuid]['result']  = 'started'
+
     def v2_playbook_on_task_start(self, task, is_conditional):
+        #self.tasks[result.task._uuid]['result']  = 'started'
         self._task_counter += 1
         self._PLAYBOOK_START_TS_MS = getTimestampMilliseconds()
         self._record_task(task)
