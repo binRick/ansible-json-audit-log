@@ -200,22 +200,6 @@ class CallbackModule(CallbackBase):
 
         self.log(event)
 
-    """ Event used when host begins execution of a task """
-    """
-    def v2_runner_on_start(self, host, task):
-        self._record_task(task)
-        event = {
-            'event_type': "__start",
-            'task_uuid': task._uuid,
-        }
-        if task._role:
-            event['role'] = task._role._role_name
-        if task and task.name:
-            event['ansible_task'] = task.name
-
-        #self.log(event)
-    """
-
     def v2_runner_on_start(self, host, task):
         self._record_task(task)
         #if not 'result' in self.tasks[result._task._uuid].keys():
@@ -313,8 +297,6 @@ class CallbackModule(CallbackBase):
                     if k in s.keys():
                         summarized[host][k] = s[k]
 
-
-
         if self.errors == 0:
             status = "OK"
         else:
@@ -334,6 +316,9 @@ class CallbackModule(CallbackBase):
             'skipped_tasks': self._SKIPPED_TASKS,
             'summarized': summarized,
         }
+
+        if stats.custom:
+            event['stats_custom'] = stats.custom.items()
 
         if _INCLUDE_ROLES_LIST:
             if self.roles:
@@ -357,13 +342,25 @@ class CallbackModule(CallbackBase):
             'status': "OK",
             '_type': "task",
             'host': result._host.name,
+#            'tags': result._task.tags,
             'ansible_task': result._task.name,
             'task_uuid': result._task._uuid,
             'check_mode': ('ansible_check_mode' in self.vm.get_vars().keys()),
             'COUNTER_MSG': COUNTER_MSG,
         }
-        event = self.mangleEventResult(event, result)
 
+        LINE_ITEMS = ['stdout','stderr','module_stdout','module_stderr']
+        for k in  ['stdout','stderr','msg','changed','_ansible_delegated_vars','diff','exception','warnings','reason','module_stderr','module_stdout','skipped_reason','skip_reason','deprecations','ansible_job_id']:
+            t = result._result.get(k)
+            if t:
+                event[k] = t
+                if k in LINE_ITEMS:
+                    try:
+                        event['{}_lines'.format(k)] = event[k].splitlines()
+                    except Exception as e:
+                        event['{}_lines'.format(k)] = []
+
+        event = self.mangleEventResult(event, result)
         if result._task._role and result._task._role._role_name:
             event['role'] = result._task._role._role_name
             if not event['role'] in self.roles.keys():
