@@ -111,6 +111,33 @@ class CallbackModule(CallbackBase):
             event['no_log'] = True
         else:
             event['no_log'] = False
+
+        if result._task:
+            event['action'] = result._task.action
+
+        LINE_ITEMS = ['stdout','stderr','module_stdout','module_stderr']
+        for k in ['stdout','stderr','msg','changed','_ansible_delegated_vars','diff','exception','warnings','reason','module_stderr','module_stdout','skipped_reason','skip_reason','deprecations','ansible_job_id','exit_code','invocation']:
+            t = result._result.get(k)
+            if t != None:
+                event[k] = t
+                if k in LINE_ITEMS:
+                    try:
+                        event['{}_lines'.format(k)] = event[k].splitlines()
+                        del event[k]
+                    except Exception as e:
+                        event['{}_lines'.format(k)] = []
+
+        if result._task._role and result._task._role._role_name:
+            event['role'] = result._task._role._role_name
+            if not event['role'] in self.roles.keys():
+                self.roles[event['role']] = []
+            if not result._task._uuid in self.roles[event['role']]['tasks']:
+                self.roles[event['role']]['tasks'].append(result._task._uuid)
+
+#        if result._result:
+#            event['keys'] = "{}".format(result._result.items())
+
+
         return event
 
     def _all_vars(self, host=None, task=None):
@@ -177,8 +204,12 @@ class CallbackModule(CallbackBase):
         if 'task_uuid' in event.keys() and event['task_uuid'] in TASK_END_TIMES:
             event['end_ts_ms'] = TASK_END_TIMES[event['task_uuid']]
             event['duration_ms'] = event['end_ts_ms'] - event['start_ts_ms']
+        try:
+            S = json.dumps(event, cls=AnsibleJSONEncoder) + "\n"
+        except Exception as e:
+            S = '{"error":"failed to decode"}'
 
-        msg = to_bytes(json.dumps(event, cls=AnsibleJSONEncoder) + "\n")
+        msg = to_bytes(S)
 
         path = os.path.realpath(os.path.dirname(os.path.realpath(self.log_path)))
         if not os.path.exists(path):
@@ -317,8 +348,8 @@ class CallbackModule(CallbackBase):
             'summarized': summarized,
         }
 
-        if stats.custom:
-            event['stats_custom'] = stats.custom.items()
+        #if stats.custom:
+        #    event['stats_custom'] = stats.custom.items()
 
         if _INCLUDE_ROLES_LIST:
             if self.roles:
@@ -336,7 +367,6 @@ class CallbackModule(CallbackBase):
 
     def v2_runner_on_ok(self, result, **kwargs):
         self.tasks[result._task._uuid]['result']  = 'ok'
-        COUNTER_MSG = ("%d/%d [%s]" % (self._task_counter, self._task_total, result._task.get_name().strip()))
         event = {
             'event_type': "task_ok",
             'status': "OK",
@@ -346,27 +376,9 @@ class CallbackModule(CallbackBase):
             'ansible_task': result._task.name,
             'task_uuid': result._task._uuid,
             'check_mode': ('ansible_check_mode' in self.vm.get_vars().keys()),
-            'COUNTER_MSG': COUNTER_MSG,
         }
 
-        LINE_ITEMS = ['stdout','stderr','module_stdout','module_stderr']
-        for k in  ['stdout','stderr','msg','changed','_ansible_delegated_vars','diff','exception','warnings','reason','module_stderr','module_stdout','skipped_reason','skip_reason','deprecations','ansible_job_id']:
-            t = result._result.get(k)
-            if t:
-                event[k] = t
-                if k in LINE_ITEMS:
-                    try:
-                        event['{}_lines'.format(k)] = event[k].splitlines()
-                    except Exception as e:
-                        event['{}_lines'.format(k)] = []
-
         event = self.mangleEventResult(event, result)
-        if result._task._role and result._task._role._role_name:
-            event['role'] = result._task._role._role_name
-            if not event['role'] in self.roles.keys():
-                self.roles[event['role']] = []
-            if not result._task._uuid in self.roles[event['role']]['tasks']:
-                self.roles[event['role']]['tasks'].append(result._task._uuid)
 
         self.log(event)
 
