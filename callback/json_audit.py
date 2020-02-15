@@ -365,6 +365,44 @@ class CallbackModule(CallbackBase):
         self.log(event)
 
 
+    def v2_runner_on_failed(self, result, ignore_errors=False):
+        self.tasks[result._task._uuid]['result']  = 'failed'
+        event = {
+            'event_type': "task_failed",
+            'status': "FAILED",
+            '_type': "task",
+            'host': result._host.name,
+            'ansible_task': result._task.name,
+            'task_uuid': result._task._uuid,
+            'delegated_vars': result._result.get('_ansible_delegated_vars', None),
+#            'result': result._result,
+            'result_hostname': result._host.get_name(),
+            'warnings': result._result.get('warnings', None),
+            'exception': result._result.get('exception', None),
+            'deprecations': result._result.get('deprecations', None),
+            'msg': result._result.get('msg', None),
+            'module_stdout': result._result.get('module_stdout', None),
+            'module_stderr': result._result.get('module_stderr', None),
+            'stdout': result._result.get('stdout', None),
+            'stderr': result._result.get('stderr', None),
+            'invocation_items': result._result.get('invocation_items', None),
+            'invocation': result._result.get('invocation', None),
+            'module_args': result._result.get('invocation',{}).get('module_args',None),
+            'tags': context.CLIARGS['tags'],
+            'remote_user': context.CLIARGS['remote_user'],
+            'skip_tags': context.CLIARGS['skip_tags'],
+            'extra_vars': context.CLIARGS['extra_vars'],
+            'subset': context.CLIARGS['subset'],
+            'args': context.CLIARGS['args'],
+            'start_at_task': context.CLIARGS['start_at_task'],
+            'inventory':  [os.path.abspath(i) for i in context.CLIARGS['inventory']],
+
+        }
+
+        event = self.mangleEventResult(event, result)
+
+        self.log(event)
+
     def v2_runner_on_ok(self, result, **kwargs):
         self.tasks[result._task._uuid]['result']  = 'ok'
         event = {
