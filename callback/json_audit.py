@@ -328,6 +328,9 @@ class CallbackModule(CallbackBase):
                     if k in s.keys():
                         summarized[host][k] = s[k]
 
+        summarized = {}
+        
+
         if self.errors == 0:
             status = "OK"
         else:
