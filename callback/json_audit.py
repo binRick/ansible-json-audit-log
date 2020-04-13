@@ -1,7 +1,3 @@
-# (C) 2019, Sami Korhonen, <skorhone@gmail.com>
-# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
-
-
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
@@ -23,7 +19,7 @@ import json
 import uuid
 from datetime import datetime
 import collections
-
+from threading import Thread
 from ansible import context
 from ansible.module_utils._text import to_bytes
 from ansible.plugins.callback import CallbackBase
@@ -37,6 +33,8 @@ SESSION_UUID = os.environ.get('SESSION_UUID', str(uuid.uuid1()))
 SERVER_UUID = os.environ.get('SERVER_UUID', str(uuid.uuid1()))
 PLAY_UUID = os.environ.get('PLAY_UUID', str(uuid.uuid1()))
 ANSIBLE_JSON_LOG_PATH = os.environ.get('ANSIBLE_JSON_LOG_PATH', '/tmp/ansible-audit.log')
+ANSIBLE_MONITOR_LOG_PATH = os.environ.get('ANSIBLE_MONITOR_LOG_PATH', '/tmp/monitor.log')
+ANSIBLE_MONITOR_LOG_INTERVAL = 5.0
 PIPES =  [ANSIBLE_JSON_LOG_PATH]
 LOG_FILE_MODE = 0o755        
 
@@ -62,6 +60,13 @@ def summarizeRoles(ROLES, TASKS):
     return SUMMARY        
     return ROLES
 
+def do_monitor():
+    while True:
+        with open(ANSIBLE_MONITOR_LOG_PATH,'a') as f:
+            DAT = time.time()
+            f.write(str(DAT)+"\n")
+        time.sleep(ANSIBLE_MONITOR_LOG_INTERVAL)
+
 
 
 class CallbackModule(CallbackBase):
@@ -75,6 +80,10 @@ class CallbackModule(CallbackBase):
 
     def __init__(self):
         self.vm = None
+        self.monitor_thread = None
+        if True:
+            self.monitor_thread = Thread(target=do_monitor, args=(), daemon=True)
+            self.monitor_thread.start()
         self.tasks = collections.OrderedDict()
         self.roles = collections.OrderedDict()
         self.tags = collections.OrderedDict()
