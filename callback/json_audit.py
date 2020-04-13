@@ -67,8 +67,6 @@ def do_monitor():
             f.write(str(DAT)+"\n")
         time.sleep(ANSIBLE_MONITOR_LOG_INTERVAL)
 
-
-
 class CallbackModule(CallbackBase):
     """
     logs playbook results in /var/log/ansible/audit.log
