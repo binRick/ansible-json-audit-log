@@ -38,6 +38,7 @@ SERVER_UUID = os.environ.get('SERVER_UUID', str(uuid.uuid1()))
 PLAY_UUID = os.environ.get('PLAY_UUID', str(uuid.uuid1()))
 ANSIBLE_JSON_LOG_PATH = os.environ.get('ANSIBLE_JSON_LOG_PATH', '/tmp/ansible-audit.log')
 PIPES =  [ANSIBLE_JSON_LOG_PATH]
+LOG_FILE_MODE = 0o755        
 
 
 def getTimestampMilliseconds():
@@ -85,7 +86,13 @@ class CallbackModule(CallbackBase):
         super(CallbackModule, self).__init__()
 
         self.user = self.get_username()
+
         self.log_path = ANSIBLE_JSON_LOG_PATH
+        self._log_path = os.path.realpath(os.path.dirname(os.path.realpath(self.log_path)))
+        if not os.path.exists(self._log_path):
+            pathlib.Path(self._log_path).mkdir(parents=True, exist_ok=True)
+        os.chmod(self._log_path, LOG_FILE_MODE)
+
         self.session_uuid = SESSION_UUID
         self.errors = 0
         self.pid = os.getpid()
@@ -211,9 +218,6 @@ class CallbackModule(CallbackBase):
 
         msg = to_bytes(S)
 
-        path = os.path.realpath(os.path.dirname(os.path.realpath(self.log_path)))
-        if not os.path.exists(path):
-            pathlib.Path(path).mkdir(parents=True, exist_ok=True)
 
         with open(self.log_path, "ab") as fd:
             fd.write(msg)
