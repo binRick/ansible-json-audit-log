@@ -112,6 +112,8 @@ class CallbackModule(CallbackBase):
         self._task_counter = None
         self._host_total = None
         self._task_total = None
+        self.__task_total = None
+        self.__task_totals = []
 
     def baseEvent(self, event):
         event['ts_ms'] = getTimestampMilliseconds()
@@ -277,14 +279,18 @@ class CallbackModule(CallbackBase):
         self.vm = play.get_variable_manager()
         self._host_total = len(self._all_vars()['vars']['ansible_play_hosts_all'])
         self._task_total = len(self.play.get_tasks()[0])
-        self._task_counter = 0
 
+        self._task_counter = 0
+        self.__task_total = 666
+        self.__task_totals.append({'t':'nit'})
         event = {
               'event_type': "start",
               'status': "OK",
               '_type': "start",
               '_host_total': self._host_total,
               '_task_total': self._task_total,
+              '__task_total': self.__task_total,
+              '__task_totals': json.dumps(self.__task_totals),
         }
         if not self.start_logged:
           self.start_logged = True
