@@ -1,7 +1,3 @@
-# (C) 2019, Sami Korhonen, <skorhone@gmail.com>
-# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
-
-
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
@@ -23,7 +19,7 @@ import json
 import uuid
 from datetime import datetime
 import collections
-
+from threading import Thread
 from ansible import context
 from ansible.module_utils._text import to_bytes
 from ansible.plugins.callback import CallbackBase
@@ -37,7 +33,10 @@ SESSION_UUID = os.environ.get('SESSION_UUID', str(uuid.uuid1()))
 SERVER_UUID = os.environ.get('SERVER_UUID', str(uuid.uuid1()))
 PLAY_UUID = os.environ.get('PLAY_UUID', str(uuid.uuid1()))
 ANSIBLE_JSON_LOG_PATH = os.environ.get('ANSIBLE_JSON_LOG_PATH', '/tmp/ansible-audit.log')
+ANSIBLE_MONITOR_LOG_PATH = os.environ.get('ANSIBLE_MONITOR_LOG_PATH', '/tmp/monitor.log')
+ANSIBLE_MONITOR_LOG_INTERVAL = 5.0
 PIPES =  [ANSIBLE_JSON_LOG_PATH]
+LOG_FILE_MODE = 0o755        
 
 
 def getTimestampMilliseconds():
@@ -61,7 +60,12 @@ def summarizeRoles(ROLES, TASKS):
     return SUMMARY        
     return ROLES
 
-
+def do_monitor():
+    while True:
+        with open(ANSIBLE_MONITOR_LOG_PATH,'a') as f:
+            DAT = time.time()
+            f.write(str(DAT)+"\n")
+        time.sleep(ANSIBLE_MONITOR_LOG_INTERVAL)
 
 class CallbackModule(CallbackBase):
     """
@@ -74,6 +78,10 @@ class CallbackModule(CallbackBase):
 
     def __init__(self):
         self.vm = None
+        self.monitor_thread = None
+        if True:
+            self.monitor_thread = Thread(target=do_monitor, args=(), daemon=True)
+            self.monitor_thread.start()
         self.tasks = collections.OrderedDict()
         self.roles = collections.OrderedDict()
         self.tags = collections.OrderedDict()
@@ -82,10 +90,17 @@ class CallbackModule(CallbackBase):
         self._PLAYBOOK_END_TS_MS = None
         self._DURATION_MS = None
         self._SKIPPED_TASKS = []
+        self._UNTAGGED_TASKS = []
         super(CallbackModule, self).__init__()
 
         self.user = self.get_username()
+
         self.log_path = ANSIBLE_JSON_LOG_PATH
+        self._log_path = os.path.realpath(os.path.dirname(os.path.realpath(self.log_path)))
+        if not os.path.exists(self._log_path):
+            pathlib.Path(self._log_path).mkdir(parents=True, exist_ok=True)
+        os.chmod(self._log_path, LOG_FILE_MODE)
+
         self.session_uuid = SESSION_UUID
         self.errors = 0
         self.pid = os.getpid()
@@ -98,6 +113,8 @@ class CallbackModule(CallbackBase):
         self._task_counter = None
         self._host_total = None
         self._task_total = None
+        self.__task_total = None
+        self.__task_totals = []
 
     def baseEvent(self, event):
         event['ts_ms'] = getTimestampMilliseconds()
@@ -111,6 +128,33 @@ class CallbackModule(CallbackBase):
             event['no_log'] = True
         else:
             event['no_log'] = False
+
+        if result._task:
+            event['action'] = result._task.action
+
+        LINE_ITEMS = ['stdout','stderr','module_stdout','module_stderr']
+        for k in ['stdout','stderr','msg','changed','_ansible_delegated_vars','diff','exception','warnings','reason','module_stderr','module_stdout','skipped_reason','skip_reason','deprecations','ansible_job_id','exit_code','invocation']:
+            t = result._result.get(k)
+            if t != None:
+                event[k] = t
+                if k in LINE_ITEMS:
+                    try:
+                        event['{}_lines'.format(k)] = event[k].splitlines()
+                        del event[k]
+                    except Exception as e:
+                        event['{}_lines'.format(k)] = []
+
+        if result._task._role and result._task._role._role_name:
+            event['role'] = result._task._role._role_name
+            if not event['role'] in self.roles.keys():
+                self.roles[event['role']] = []
+            if not result._task._uuid in self.roles[event['role']]['tasks']:
+                self.roles[event['role']]['tasks'].append(result._task._uuid)
+
+#        if result._result:
+#            event['keys'] = "{}".format(result._result.items())
+
+
         return event
 
     def _all_vars(self, host=None, task=None):
@@ -123,27 +167,24 @@ class CallbackModule(CallbackBase):
         )
 
 
-    def _record_task(self, task, handler=None, task_result=None):
+    def _record_task(self, task):
         self.current = task._uuid
-        if not self.current in self.tasks:
+        if not self.current in self.tasks.keys():
             self.tasks[self.current] = {}
             self.tasks[self.current]['name'] = task.get_name().strip()
-            self.tasks[self.current]['handlers'] = []
-            self.tasks[self.current]['items'] = []
-            self.tasks[self.current]['result'] = None
             self.tasks[self.current]['role'] = None
-            if self.current not in TASK_START_TIMES.keys():
-                TASK_START_TIMES[self.current] = getTimestampMilliseconds()
+            self.tasks[self.current]['items'] = None
+            self.tasks[self.current]['result'] = None
+
+        if self.current not in TASK_START_TIMES.keys():
+            TASK_START_TIMES[self.current] = getTimestampMilliseconds()
+            self.tasks[self.current]['start_ts_time'] = time.time()
         else:
+            TASK_END_TIMES[self.current] = getTimestampMilliseconds()
             self.tasks[self.current]['start_ts_ms'] = TASK_START_TIMES[self.current]
             self.tasks[self.current]['end_ts_ms'] = TASK_END_TIMES[self.current]
+            self.tasks[self.current]['end_ts_time'] = time.time()
             self.tasks[self.current]['duration_ms'] = TASK_END_TIMES[self.current] - TASK_START_TIMES[self.current]
-
-        if task_result != None:
-            self.tasks[self.current]['result'] = task_result
-        if handler != None:
-            self.tasks[self.current]['handlers'].append(handler)
-            TASK_END_TIMES[self.current] = getTimestampMilliseconds()
 
         if task.action:
             self.tasks[self.current]['action'] = task.action
@@ -180,12 +221,13 @@ class CallbackModule(CallbackBase):
         if 'task_uuid' in event.keys() and event['task_uuid'] in TASK_END_TIMES:
             event['end_ts_ms'] = TASK_END_TIMES[event['task_uuid']]
             event['duration_ms'] = event['end_ts_ms'] - event['start_ts_ms']
+        try:
+            S = json.dumps(event, cls=AnsibleJSONEncoder) + "\n"
+        except Exception as e:
+            S = '{"error":"failed to decode"}'
 
-        msg = to_bytes(json.dumps(event, cls=AnsibleJSONEncoder) + "\n")
+        msg = to_bytes(S)
 
-        path = os.path.realpath(os.path.dirname(os.path.realpath(self.log_path)))
-        if not os.path.exists(path):
-            pathlib.Path(path).mkdir(parents=True, exist_ok=True)
 
         with open(self.log_path, "ab") as fd:
             fd.write(msg)
@@ -203,25 +245,13 @@ class CallbackModule(CallbackBase):
 
         self.log(event)
 
-    """ Event used when host begins execution of a task """
-    """
     def v2_runner_on_start(self, host, task):
         self._record_task(task)
-        event = {
-            'event_type': "__start",
-            'task_uuid': task._uuid,
-        }
-        if task._role:
-            event['role'] = task._role._role_name
-        if task and task.name:
-            event['ansible_task'] = task.name
+        #if not 'result' in self.tasks[result._task._uuid].keys():
+        #self.tasks[result.task._uuid]['result']  = 'started'
 
-        #self.log(event)
-    """
-
-    def v2_runner_on_start(self, host, task):
-        self._record_task(task)
     def v2_playbook_on_task_start(self, task, is_conditional):
+        #self.tasks[result.task._uuid]['result']  = 'started'
         self._task_counter += 1
         self._PLAYBOOK_START_TS_MS = getTimestampMilliseconds()
         self._record_task(task)
@@ -250,14 +280,18 @@ class CallbackModule(CallbackBase):
         self.vm = play.get_variable_manager()
         self._host_total = len(self._all_vars()['vars']['ansible_play_hosts_all'])
         self._task_total = len(self.play.get_tasks()[0])
-        self._task_counter = 0
 
+        self._task_counter = 0
+        self.__task_total = 666
+        self.__task_totals.append({'t':'nit'})
         event = {
               'event_type': "start",
               'status': "OK",
               '_type': "start",
               '_host_total': self._host_total,
               '_task_total': self._task_total,
+              '__task_total': self.__task_total,
+              '__task_totals': json.dumps(self.__task_totals),
         }
         if not self.start_logged:
           self.start_logged = True
@@ -312,7 +346,8 @@ class CallbackModule(CallbackBase):
                     if k in s.keys():
                         summarized[host][k] = s[k]
 
-
+        summarized = {}
+        
 
         if self.errors == 0:
             status = "OK"
@@ -331,8 +366,12 @@ class CallbackModule(CallbackBase):
             'roles': [],
             'tasks': [],
             'skipped_tasks': self._SKIPPED_TASKS,
+            'untagged_tasks': 101, #self._UNTAGGED_TASKS,
             'summarized': summarized,
         }
+
+        #if stats.custom:
+        #    event['stats_custom'] = stats.custom.items()
 
         if _INCLUDE_ROLES_LIST:
             if self.roles:
@@ -348,31 +387,63 @@ class CallbackModule(CallbackBase):
         self.log(event)
 
 
+    def v2_runner_on_failed(self, result, ignore_errors=False):
+        self.tasks[result._task._uuid]['result']  = 'failed'
+        event = {
+            'event_type': "task_failed",
+            'status': "FAILED",
+            '_type': "task",
+            'host': result._host.name,
+            'ansible_task': result._task.name,
+            'task_uuid': result._task._uuid,
+            'delegated_vars': result._result.get('_ansible_delegated_vars', None),
+#            'result': result._result,
+            'result_hostname': result._host.get_name(),
+            'warnings': result._result.get('warnings', None),
+            'exception': result._result.get('exception', None),
+            'deprecations': result._result.get('deprecations', None),
+            'msg': result._result.get('msg', None),
+            'module_stdout': result._result.get('module_stdout', None),
+            'module_stderr': result._result.get('module_stderr', None),
+            'stdout': result._result.get('stdout', None),
+            'stderr': result._result.get('stderr', None),
+            'invocation_items': result._result.get('invocation_items', None),
+            'invocation': result._result.get('invocation', None),
+            'module_args': result._result.get('invocation',{}).get('module_args',None),
+            'tags': context.CLIARGS['tags'],
+            'remote_user': context.CLIARGS['remote_user'],
+            'skip_tags': context.CLIARGS['skip_tags'],
+            'extra_vars': context.CLIARGS['extra_vars'],
+            'subset': context.CLIARGS['subset'],
+            'args': context.CLIARGS['args'],
+            'start_at_task': context.CLIARGS['start_at_task'],
+            'inventory':  [os.path.abspath(i) for i in context.CLIARGS['inventory']],
+
+        }
+
+        event = self.mangleEventResult(event, result)
+
+        self.log(event)
+
     def v2_runner_on_ok(self, result, **kwargs):
-        self._record_task(result._task, 'ok', 'ok')
-        COUNTER_MSG = ("%d/%d [%s]" % (self._task_counter, self._task_total, result._task.get_name().strip()))
+        self.tasks[result._task._uuid]['result']  = 'ok'
         event = {
             'event_type': "task_ok",
             'status': "OK",
             '_type': "task",
             'host': result._host.name,
+#            'tags': result._task.tags,
             'ansible_task': result._task.name,
             'task_uuid': result._task._uuid,
             'check_mode': ('ansible_check_mode' in self.vm.get_vars().keys()),
-            'COUNTER_MSG': COUNTER_MSG,
         }
-        event = self.mangleEventResult(event, result)
 
-        if result._task._role and result._task._role._role_name:
-            event['role'] = result._task._role._role_name
-            if not event['role'] in self.roles.keys():
-                self.roles[event['role']] = []
-            if not result._task._uuid in self.roles[event['role']]['tasks']:
-                self.roles[event['role']]['tasks'].append(result._task._uuid)
+        event = self.mangleEventResult(event, result)
 
         self.log(event)
 
     def v2_runner_on_skipped(self, result, **kwargs):
+        self.tasks[result._task._uuid]['result']  = 'skipped'
         if not result._task._uuid in self._SKIPPED_TASKS:
             self._SKIPPED_TASKS.append(result._task._uuid)
         event = {
@@ -419,6 +490,7 @@ class CallbackModule(CallbackBase):
         self.log(event)
 
     def v2_runner_on_unreachable(self, result, **kwargs):
+        self.tasks[result._task._uuid]['result']  = 'unreachable'
         event = {
             'event_type': "task_unreachable",
             'status': "unreachable",
@@ -432,6 +504,7 @@ class CallbackModule(CallbackBase):
         self.log(event)
 
     def v2_runner_on_async_failed(self, result, **kwargs):
+        self.tasks[result._task._uuid]['result']  = 'async_failed'
         event = {
             'event_type': "async",
             'status': "failed",

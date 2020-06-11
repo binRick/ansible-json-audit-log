@@ -90,6 +90,7 @@ class CallbackModule(CallbackBase):
         self._PLAYBOOK_END_TS_MS = None
         self._DURATION_MS = None
         self._SKIPPED_TASKS = []
+        self._UNTAGGED_TASKS = []
         super(CallbackModule, self).__init__()
 
         self.user = self.get_username()
@@ -365,6 +366,7 @@ class CallbackModule(CallbackBase):
             'roles': [],
             'tasks': [],
             'skipped_tasks': self._SKIPPED_TASKS,
+            'untagged_tasks': 101, #self._UNTAGGED_TASKS,
             'summarized': summarized,
         }
 
